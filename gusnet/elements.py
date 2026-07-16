@@ -789,7 +789,13 @@ class ModelOptions:
 
     flow_units: FlowUnit = dataclasses.field(
         metadata=OptionsFieldMetadata(
-            description=tr("Flow units for the model"),
+            description=tr(
+                "Flow units for the model. "
+                "For LPS, LPM, MLD, CMH and CMD: pipe lengths and elevations are in metres, "
+                "pipe diameters are in millimetres, and pressure is expressed as metres of water. "
+                "For CFS, GPM, MGD, IMGD and AFD: pipe lengths and elevations are in feet, "
+                "pipe diameters are in inches, and pressure is expressed in psi."
+            ),
             help_text=tr(
                 "Flow units will determine the units of other units used in the model as well."
                 "Selecting a metric-based unit set means everything will be metric, wheras selecting an imperial measure means everything will be imperial."  # noqa: E501
