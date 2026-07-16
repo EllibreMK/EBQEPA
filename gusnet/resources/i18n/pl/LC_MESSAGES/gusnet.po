@@ -1,17 +1,19 @@
-# Translations template for PROJECT.
+# Polish translations for PROJECT.
 # Copyright (C) 2026 ORGANIZATION
 # This file is distributed under the same license as the PROJECT project.
 # FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
 #
-#, fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
 "POT-Creation-Date: 2026-07-16 10:29+0200\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"PO-Revision-Date: 2026-07-16 10:29+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
-"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: pl\n"
+"Language-Team: pl <LL@li.org>\n"
+"Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n%10>=2 && n%10<=4 && "
+"(n%100<10 || n%100>=20) ? 1 : 2);\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -93,7 +95,7 @@ msgstr ""
 
 #: gusnet/elements.py:54
 msgid "Litres per Second"
-msgstr ""
+msgstr "Litry na sekundę"
 
 #: gusnet/elements.py:56
 msgid "Litres per Minute"
@@ -105,7 +107,7 @@ msgstr ""
 
 #: gusnet/elements.py:60
 msgid "Cubic Metres per Hour"
-msgstr ""
+msgstr "Metry sześcienne na godzinę""
 
 #: gusnet/elements.py:62
 msgid "Cubic Metres per Day"
@@ -657,12 +659,17 @@ msgstr ""
 
 #: gusnet/elements.py:793
 msgid ""
-"Flow units for the model. For LPS, LPM, MLD, CMH and CMD: pipe lengths "
-"and elevations are in metres, pipe diameters are in millimetres, and "
-"pressure is expressed as metres of water. For CFS, GPM, MGD, IMGD and "
-"AFD: pipe lengths and elevations are in feet, pipe diameters are in "
-"inches, and pressure is expressed in psi."
+"Flow units for the model. "
+"For LPS, LPM, MLD, CMH and CMD: pipe lengths and elevations are in metres, "
+"pipe diameters are in millimetres, and pressure is expressed as metres of water. "
+"For CFS, GPM, MGD, IMGD and AFD: pipe lengths and elevations are in feet, "
+"pipe diameters are in inches, and pressure is expressed in psi."
 msgstr ""
+"Jednostki przepływu dla modelu. "
+"Dla LPS, LPM, MLD, CMH i CMD: długości przewodów oraz rzędne są podawane w metrach, "
+"średnice przewodów w milimetrach, a ciśnienie w metrach słupa wody. "
+"Dla CFS, GPM, MGD, IMGD i AFD: długości przewodów oraz rzędne są podawane w stopach, "
+"średnice przewodów w calach, a ciśnienie w psi."
 
 #: gusnet/elements.py:800
 msgid ""
@@ -1159,6 +1166,7 @@ msgid_plural ""
 "These are pipes: {mismatches}"
 msgstr[0] ""
 msgstr[1] ""
+msgstr[2] ""
 
 #: gusnet/feature_reader.py:392
 #, python-brace-format
@@ -1170,6 +1178,7 @@ msgid_plural ""
 "the selected coordinate reference system)"
 msgstr[0] ""
 msgstr[1] ""
+msgstr[2] ""
 
 #: gusnet/feature_reader.py:401
 msgid "Geometry errors were found."
@@ -1209,7 +1218,7 @@ msgstr ""
 
 #: gusnet/plugin.py:152
 msgid "Units"
-msgstr ""
+msgstr "Jednostki"
 
 #: gusnet/plugin.py:153
 msgid "Duration (hours)"
@@ -1333,6 +1342,7 @@ msgid "1 hour"
 msgid_plural "{count} hours"
 msgstr[0] ""
 msgstr[1] ""
+msgstr[2] ""
 
 #: gusnet/profiler.py:24
 msgid "Execution of script cancelled by user"
@@ -1930,7 +1940,7 @@ msgstr ""
 #: gusnet/gusnet_processing/run_simulation.py:515
 #: gusnet/gusnet_processing/run_simulation.py:532
 msgid "Run Simulation"
-msgstr ""
+msgstr "Uruchom symulację"
 
 #: gusnet/gusnet_processing/run_simulation.py:518
 msgid ""
