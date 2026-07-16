@@ -547,9 +547,15 @@ The output files are a layer of 'nodes' (junctions, tanks, reservoirs) and \
 
             feedback.pushInfo(str(ModelStatistics.from_model(Model(network, model_options, elements))))
 
-            temp_file_dir = Path(QgsProcessingUtils.tempFolder(context)) / f"gusnet_run_{uuid.uuid4().hex}"
+            safe_temp_root = Path("C:/QGIS_TEMP")
+            safe_temp_root.mkdir(parents=True, exist_ok=True)
+
+            temp_file_dir = safe_temp_root / f"gusnet_run_{uuid.uuid4().hex}"
             temp_file_dir.mkdir(parents=True, exist_ok=True)
-            feedback.pushDebugInfo(tr("Using temporary folder: {folder}").format(folder=temp_file_dir))
+
+            feedback.pushDebugInfo(
+                tr("Using temporary folder: {folder}").format(folder=temp_file_dir)
+            )
             input_file = temp_file_dir / "run_input.inp"
             report_file = temp_file_dir / "run_report.rpt"
             output_file = temp_file_dir / "run_output.bin"
