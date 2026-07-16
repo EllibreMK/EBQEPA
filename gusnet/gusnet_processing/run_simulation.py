@@ -48,6 +48,7 @@ from gusnet.elements import (
     DEFAULT_OPTIONS,
     DemandType,
     EnumWithName,
+    Field,
     FlowUnit,
     HeadlossFormula,
     MassUnit,
@@ -546,6 +547,36 @@ The output files are a layer of 'nodes' (junctions, tanks, reservoirs) and \
                 model_options, network, elements = self._get_model(parameters, context)
 
             feedback.pushInfo(str(ModelStatistics.from_model(Model(network, model_options, elements))))
+
+            pipe_attributes = elements.get(ModelLayer.PIPES, {})
+            raw_diameters = pipe_attributes.get(Field.DIAMETER, [])
+
+            diameters = []
+            for diameter in raw_diameters:
+                if diameter is None:
+                    continue
+
+                try:
+                    diameters.append(float(diameter))
+                except (TypeError, ValueError):
+                    continue
+
+            if (
+                not model_options.flow_units.is_traditional
+                and diameters
+                and max(diameters) <= 20
+            ):
+                feedback.pushWarning(
+                    tr(
+                        "Pipe diameters range from {minimum:g} to {maximum:g} mm. "
+                        "These values look unusually small for a water distribution network "
+                        "and may have been entered in inches. For LPS and CMH models, "
+                        "pipe diameters must be provided in millimetres."
+                    ).format(
+                        minimum=min(diameters),
+                        maximum=max(diameters),
+                    )
+                )
 
             safe_temp_root = Path("C:/QGIS_TEMP")
             safe_temp_root.mkdir(parents=True, exist_ok=True)
