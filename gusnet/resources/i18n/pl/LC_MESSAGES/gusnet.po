@@ -669,7 +669,7 @@ msgstr ""
 "Dla LPS, LPM, MLD, CMH i CMD: długości przewodów oraz rzędne są podawane w metrach, "
 "średnice przewodów w milimetrach, a ciśnienie w metrach słupa wody. "
 "Dla CFS, GPM, MGD, IMGD i AFD: długości przewodów oraz rzędne są podawane w stopach, "
-"średnice przewodów w calach, a ciśnienie w psi."
+"średnice przewodów w calach, a ciśnienie w psi.
 
 #: gusnet/elements.py:800
 msgid ""
@@ -1214,7 +1214,7 @@ msgstr ""
 
 #: gusnet/plugin.py:151
 msgid "Headloss Formula"
-msgstr ""
+msgstr "Wzór strat hydraulicznych"
 
 #: gusnet/plugin.py:152
 msgid "Units"
@@ -1222,11 +1222,11 @@ msgstr "Jednostki"
 
 #: gusnet/plugin.py:153
 msgid "Duration (hours)"
-msgstr ""
+msgstr "Czas trwania (godziny)"
 
 #: gusnet/plugin.py:154
 msgid "Demand Type"
-msgstr ""
+msgstr "Typ rozbioru"
 
 #: gusnet/plugin.py:176
 msgid "Failed to fetch EPANET. Please check your internet connection."
@@ -1246,7 +1246,7 @@ msgstr ""
 
 #: gusnet/plugin.py:199 gusnet/plugin.py:419
 msgid "Load Example"
-msgstr ""
+msgstr "Wczytaj przykład"
 
 #: gusnet/plugin.py:266
 msgid "Gusnet:\n"
@@ -1275,15 +1275,15 @@ msgstr ""
 
 #: gusnet/plugin.py:352
 msgid "Create Template Memory Layers"
-msgstr ""
+msgstr "Utwórz tymczasowe warstwy modelu"
 
 #: gusnet/plugin.py:362
 msgid "Create Template Geopackage"
-msgstr ""
+msgstr "Utwórz model w GeoPackage"
 
 #: gusnet/plugin.py:368
 msgid "Save Geopackage"
-msgstr ""
+msgstr "Zapisz Geopackage"
 
 #: gusnet/plugin.py:370
 msgid "Geopackage"
@@ -1304,7 +1304,7 @@ msgstr ""
 
 #: gusnet/plugin.py:421
 msgid "Load an example network"
-msgstr ""
+msgstr "Wczytaj przykładową sieć"
 
 #: gusnet/plugin.py:446
 msgid "OpenStreetMap"
@@ -1326,15 +1326,15 @@ msgstr ""
 
 #: gusnet/plugin.py:494
 msgid "Change layers..."
-msgstr ""
+msgstr "Zmień warstwy..."
 
 #: gusnet/plugin.py:495
 msgid "Open the settings dialog to change the model layers."
-msgstr ""
+msgstr "Otwórz ustawienia, aby zmienić warstwy modelu."
 
 #: gusnet/plugin.py:671
 msgid "Single period simulation"
-msgstr ""
+msgstr "Symulacja pojedynczego okresu"
 
 #: gusnet/plugin.py:674 gusnet/plugin.py:680
 #, python-brace-format
@@ -1840,7 +1840,7 @@ msgstr ""
 #: gusnet/gusnet_processing/empty_model.py:33
 #: gusnet/gusnet_processing/empty_model.py:61
 msgid "Create Template Layers"
-msgstr ""
+msgstr "Utwórz warstwy modelu"
 
 #: gusnet/gusnet_processing/empty_model.py:37
 msgid ""
@@ -1852,24 +1852,24 @@ msgstr ""
 #: gusnet/gusnet_processing/empty_model.py:45
 #: gusnet/gusnet_processing/import_inp.py:72
 msgid "Coordinate Reference System (CRS)"
-msgstr ""
+msgstr "Układ współrzędnych (CRS)"
 
 #: gusnet/gusnet_processing/empty_model.py:48
 msgid "Create Fields for Water Quality Analysis"
-msgstr ""
+msgstr "Utwórz pola do analizy jakości wody"
 
 #: gusnet/gusnet_processing/empty_model.py:49
 msgid "Create Fields for Energy Analysis"
-msgstr ""
+msgstr "Utwórz pola do analizy energii"
 
 #: gusnet/gusnet_processing/empty_model.py:85
 msgid "Model Layers"
-msgstr ""
+msgstr "Warstwy modelu"
 
 #: gusnet/gusnet_processing/import_inp.py:51
 #: gusnet/gusnet_processing/import_inp.py:96
 msgid "Import from Epanet INP file"
-msgstr ""
+msgstr "Importuj z pliku EPANET INP"
 
 #: gusnet/gusnet_processing/import_inp.py:55
 msgid ""
@@ -1880,11 +1880,11 @@ msgstr ""
 
 #: gusnet/gusnet_processing/import_inp.py:66
 msgid "Epanet Input File (.inp)"
-msgstr ""
+msgstr "Plik wejściowy EPANET (.inp)"
 
 #: gusnet/gusnet_processing/import_inp.py:106
 msgid "Loading INP File"
-msgstr ""
+msgstr "Wczytywanie pliku INP"
 
 #: gusnet/gusnet_processing/import_inp.py:117
 #, python-brace-format
@@ -1899,7 +1899,7 @@ msgstr ""
 #: gusnet/gusnet_processing/import_inp.py:132
 #: gusnet/gusnet_processing/run_simulation.py:660
 msgid "Creating Outputs"
-msgstr ""
+msgstr "Tworzenie warstw wynikowych"
 
 #: gusnet/gusnet_processing/import_inp.py:133
 #, python-brace-format
@@ -1908,15 +1908,15 @@ msgstr ""
 
 #: gusnet/gusnet_processing/run_simulation.py:353
 msgid "Simulation Results - Nodes"
-msgstr ""
+msgstr "Wyniki symulacji – węzły"
 
 #: gusnet/gusnet_processing/run_simulation.py:356
 msgid "Simulation Results - Links"
-msgstr ""
+msgstr "Wyniki symulacji – połączenia"
 
 #: gusnet/gusnet_processing/run_simulation.py:417
 msgid "Reading features"
-msgstr ""
+msgstr "Wczytywanie obiektów"
 
 #: gusnet/gusnet_processing/run_simulation.py:421
 #, python-brace-format
@@ -1925,7 +1925,7 @@ msgstr ""
 
 #: gusnet/gusnet_processing/run_simulation.py:423
 msgid "Verifying model"
-msgstr ""
+msgstr "Sprawdzanie modelu"
 
 #: gusnet/gusnet_processing/run_simulation.py:427
 #, python-brace-format
@@ -1956,7 +1956,7 @@ msgstr ""
 #: gusnet/gusnet_processing/run_simulation.py:546
 #: gusnet/gusnet_processing/run_simulation.py:656
 msgid "Preparing Model"
-msgstr ""
+msgstr "Przygotowywanie modelu"
 
 #: gusnet/gusnet_processing/run_simulation.py:571
 #, python-brace-format
@@ -1974,23 +1974,23 @@ msgstr ""
 
 #: gusnet/gusnet_processing/run_simulation.py:595
 msgid "Writing EPANET input file"
-msgstr ""
+msgstr "Zapisywanie pliku wejściowego EPANET"
 
 #: gusnet/gusnet_processing/run_simulation.py:598
 msgid "Run EPANET simulation"
-msgstr ""
+msgstr "Uruchamianie symulacji EPANET"
 
 #: gusnet/gusnet_processing/run_simulation.py:604
 msgid "Process results output file"
-msgstr ""
+msgstr "Przetwarzanie pliku wynikowego"
 
 #: gusnet/gusnet_processing/run_simulation.py:610
 msgid "Creating output layers"
-msgstr ""
+msgstr "Tworzenie warstw wynikowych"
 
 #: gusnet/gusnet_processing/run_simulation.py:631
 msgid "Export to Epanet INP file"
-msgstr ""
+msgstr "Eksportuj do pliku EPANET INP"
 
 #: gusnet/gusnet_processing/run_simulation.py:635
 msgid ""
@@ -2001,9 +2001,9 @@ msgstr ""
 
 #: gusnet/gusnet_processing/run_simulation.py:645
 msgid "Output .inp file"
-msgstr ""
+msgstr "Wyjściowy plik .inp"
 
 #: gusnet/gusnet_processing/run_simulation.py:648
 msgid "Export Inp File"
-msgstr ""
+msgstr "Eksport pliku INP"
 
