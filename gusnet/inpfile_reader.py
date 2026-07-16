@@ -118,31 +118,45 @@ class Line(tuple[str, ...]):
         obj.line_number = line_number
         return obj
 
-
 def read_sections_from_file(file_path: os.PathLike | str) -> MappingProxyType[Sections, tuple[Line, ...]]:
-    with Path(file_path).open("r", encoding="utf-8") as file:
-        lines = file.readlines()
+    file_data = Path(file_path).read_bytes()
 
-        lines_without_comments = [line.split(";")[0].strip() for line in lines]
+    decoding_error: UnicodeDecodeError | None = None
+    for encoding in ("utf-8-sig", "cp1250", "cp1252"):
+        try:
+            file_text = file_data.decode(encoding)
+            break
+        except UnicodeDecodeError as error:
+            decoding_error = error
+    else:
+        assert decoding_error is not None
+        raise decoding_error
 
-        sections: dict[Sections, list[Line]] = {section: [] for section in Sections}
+    lines = file_text.splitlines(keepends=True)
+    lines_without_comments = [line.split(";")[0].strip() for line in lines]
 
-        for line_number, line in enumerate(lines_without_comments, start=1):
-            if not line:
-                continue
+    sections: dict[Sections, list[Line]] = {section: [] for section in Sections}
+    current_section: Sections | None = None
 
-            if line.startswith("[") and line.endswith("]"):
-                section_string = line[1:-1].upper().strip()
-                if section_string in [section.name for section in Sections]:
-                    current_section = Sections[section_string]
-                else:
-                    current_section = None
+    for line_number, line in enumerate(lines_without_comments, start=1):
+        if not line:
+            continue
+
+        if line.startswith("[") and line.endswith("]"):
+            section_string = line[1:-1].upper().strip()
+            if section_string in [section.name for section in Sections]:
+                current_section = Sections[section_string]
             else:
-                if current_section:
-                    split_line = line.split()
-                    sections[current_section].append(Line(*split_line, line_number=line_number))
+                current_section = None
+        elif current_section is not None:
+            split_line = line.split()
+            sections[current_section].append(
+                Line(*split_line, line_number=line_number)
+            )
 
-    return MappingProxyType({section: tuple(lines) for section, lines in sections.items()})
+    return MappingProxyType(
+        {section: tuple(lines) for section, lines in sections.items()}
+    )
 
 
 def _make_table(lines: Iterable[Sequence[str | None]], titles: tuple) -> dict:
