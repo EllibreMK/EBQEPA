@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 
-from qgis.core import QgsTemporalNavigationObject
+from qgis.core import QgsDateTimeRange, QgsTemporalNavigationObject
 from qgis.gui import QgisInterface
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (
@@ -14,7 +14,7 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from gusnet.i18n import tr
-
+from gusnet.settings import ProjectSettings, SettingKey
 
 class ResultsTimeControl(QWidget):
     """EPANET-style control for QGIS temporal simulation results."""
@@ -29,6 +29,7 @@ class ResultsTimeControl(QWidget):
         self.controller: QgsTemporalNavigationObject = (
             iface.mapCanvas().temporalController()
         )
+        self._updating_temporal_range = False
 
         self.first_button = self._create_button(
             "|<",
@@ -109,8 +110,16 @@ class ResultsTimeControl(QWidget):
         )
 
     def set_frame(self, frame: int) -> None:
-        maximum = self.frame_count() - 1
-        frame = max(0, min(int(frame), maximum))
+        frame_count = max(
+            1,
+            self.simulation_duration_hours(),
+        )
+        maximum = frame_count - 1
+
+        frame = max(
+            0,
+            min(int(frame), maximum),
+        )
 
         if self.controller.currentFrameNumber() != frame:
             self.controller.setCurrentFrameNumber(frame)
@@ -124,29 +133,36 @@ class ResultsTimeControl(QWidget):
         self.set_frame(0)
 
     def go_to_last_frame(self) -> None:
-        self.set_frame(self.frame_count() - 1)
+        frame_count = max(
+            1,
+            self.simulation_duration_hours(),
+        )
+        self.set_frame(frame_count - 1)
 
     def update_from_controller(self, *args) -> None:
         del args
 
-        maximum = self.frame_count() - 1
-        current = self.current_frame()
+        self.update_controller_duration()
+
+        duration_hours = self.simulation_duration_hours()
+        frame_count = max(1, duration_hours)
+        maximum = frame_count - 1
+
+        current = max(
+            0,
+            min(
+                int(self.controller.currentFrameNumber()),
+                maximum,
+            ),
+        )
 
         self.slider.blockSignals(True)
         self.slider.setRange(0, maximum)
         self.slider.setValue(current)
         self.slider.blockSignals(False)
 
-        current_range = self.controller.dateTimeRangeForFrameNumber(
-            current
-        )
-        total_range = self.controller.temporalExtents()
-
-        current_time = current_range.begin().toString("HH:mm")
-        final_time = total_range.end().toString("HH:mm")
-
         self.time_label.setText(
-            f"{current_time} / {final_time}"
+            f"{current:02d}:00 / {duration_hours:02d}:00"
         )
 
         self.first_button.setEnabled(current > 0)
@@ -166,3 +182,43 @@ class ResultsTimeControl(QWidget):
             )
 
         self.deleteLater()
+        
+    def simulation_duration_hours(self) -> int:
+        duration = ProjectSettings().get(
+            SettingKey.SIMULATION_DURATION,
+            0,
+        )
+
+        try:
+            return max(0, int(duration))
+        except (TypeError, ValueError):
+            return 0   
+            
+    def update_controller_duration(self) -> None:
+        if self._updating_temporal_range:
+            return
+
+        duration_hours = max(
+            1,
+            self.simulation_duration_hours(),
+        )
+
+        current_extents = self.controller.temporalExtents()
+        start_time = current_extents.begin()
+        desired_end_time = start_time.addSecs(
+            duration_hours * 3600
+        )
+
+        if current_extents.end() == desired_end_time:
+            return
+
+        self._updating_temporal_range = True
+        try:
+            self.controller.setTemporalExtents(
+                QgsDateTimeRange(
+                    start_time,
+                    desired_end_time,
+                )
+            )
+        finally:
+            self._updating_temporal_range = False            

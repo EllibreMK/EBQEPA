@@ -21,9 +21,18 @@ from qgis.core import (
     QgsProject,
     QgsRasterLayer,
     QgsSettings,
+    QgsDateTimeRange,
 )
 from qgis.gui import QgisInterface, QgsLayerTreeViewIndicator, QgsProjectionSelectionDialog
-from qgis.PyQt.QtCore import QObject, QSettings, pyqtSlot
+from qgis.PyQt.QtCore import (
+    QDate,
+    QDateTime,
+    QObject,
+    QSettings,
+    QTime,
+    QTimer,
+    pyqtSlot,
+)
 
 # from qgis.processing import execAlgorithmDialog for qgis 3.40 onwards
 from qgis.PyQt.QtGui import QIcon, QPainter
@@ -332,30 +341,71 @@ class GeopackageOutputLayerDefinition(QgsProcessingOutputLayerDefinition):
 class RunAction(ProcessingRunnerAction):
     def __init__(self):
         super().__init__(RunSimulation())
-        self.setToolTip(tr("Run the simulation with the current settings."))
+        self.setToolTip(
+            tr("Run the simulation with the current settings.")
+        )
 
     def get_parameters(self) -> dict:
         saved_options = ProjectSettings().load_options()
-        saved_params = RunSimulation().options_to_param_values(saved_options)
+        saved_params = RunSimulation().options_to_param_values(
+            saved_options
+        )
 
         input_layers = RunSimulation().get_default_input_layers()
 
         if not len(input_layers):
-            self.display_error("Set the layers that will be part of the model before running it.")
+            self.display_error(
+                "Set the layers that will be part of the model before running it."
+            )
             raise CantGetParametersException
 
-        result_layers = {layer.results_name: TemporaryOutputLayerDefinition() for layer in ResultLayer}
+        result_layers = {
+            layer.results_name: TemporaryOutputLayerDefinition()
+            for layer in ResultLayer
+        }
 
-        self.set_success_message(saved_options.flow_units, saved_options.headloss_formula)
-
-        return {**saved_params, **result_layers, **input_layers}
-
-    def set_success_message(self, units: FlowUnit, headloss_formula: HeadlossFormula) -> None:
-        """Set the success message for this action."""
-        self.success_message = tr("Analysed using units '{units}' and headloss formula '{headloss_formula}'").format(
-            units=units.friendly_name,
-            headloss_formula=headloss_formula.friendly_name,
+        self.set_success_message(
+            saved_options.flow_units,
+            saved_options.headloss_formula,
         )
+
+        return {
+            **saved_params,
+            **result_layers,
+            **input_layers,
+        }
+
+    def on_executed_successfully(self, results) -> None:
+        super().on_executed_successfully(results)
+
+        # QGIS ustawia własny zakres podczas ładowania warstw wynikowych.
+        # Czekamy chwilę i dopiero potem ustawiamy początek na północ.
+        QTimer.singleShot(250, self.set_results_time_range)
+
+    def set_results_time_range(self) -> None:
+        duration_hours = int(
+            ProjectSettings().get(
+                SettingKey.SIMULATION_DURATION,
+                0,
+            )
+        )
+
+        start_time = QDateTime(
+            QDate.currentDate(),
+            QTime(0, 0, 0),
+        )
+
+        displayed_hours = max(1, duration_hours)
+        end_time = start_time.addSecs(displayed_hours * 3600)
+
+        controller = iface.mapCanvas().temporalController()
+        controller.setTemporalExtents(
+            QgsDateTimeRange(
+                start_time,
+                end_time,
+            )
+        )
+        controller.setCurrentFrameNumber(0)  
 
 
 class LoadTemplateToMemoryAction(ProcessingRunnerAction):
