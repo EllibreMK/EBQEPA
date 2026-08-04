@@ -47,6 +47,7 @@ from gusnet.gusnet_processing.provider import Provider
 from gusnet.gusnet_processing.run_simulation import RunSimulation
 from gusnet.i18n import tr, trn
 from gusnet.settings import ProjectSettings, SettingKey
+from gusnet.results_time_control import ResultsTimeControl
 
 MESSAGE_CATEGORY = "Gusnet"
 
@@ -161,8 +162,19 @@ class Plugin:
         self.template_button = iface.addToolBarWidget(template_button)
         iface.addToolBarIcon(self.load_inp_action)
         self.run_button = iface.addToolBarWidget(run_button)
+        
+        self.results_time_control = ResultsTimeControl(
+            iface,
+            self.object,
+        )
+        self.results_time_widget = iface.addToolBarWidget(
+            self.results_time_control
+        )
 
     def cleanup_toolbar(self) -> None:
+        self.results_time_control.destroy()
+        iface.removeToolBarIcon(self.results_time_widget)
+
         iface.removeToolBarIcon(self.template_button)
         iface.removeToolBarIcon(self.load_inp_action)
         iface.removeToolBarIcon(self.run_button)
