@@ -31,6 +31,7 @@ from qgis.PyQt.QtCore import (
     QSettings,
     QTime,
     QTimer,
+    Qt,
     pyqtSlot,
 )
 
@@ -39,12 +40,14 @@ from qgis.PyQt.QtGui import QIcon, QPainter
 from qgis.PyQt.QtWidgets import (
     QAction,
     QActionGroup,
+    QDockWidget,
     QFileDialog,
     QMenu,
     QPushButton,
     QToolButton,
     QWidget,
 )
+from qgis.PyQt import sip
 
 import gusnet
 import gusnet.expressions
@@ -176,13 +179,79 @@ class Plugin:
             iface,
             self.object,
         )
-        self.results_time_widget = iface.addToolBarWidget(
+
+        self.results_time_dock = QDockWidget(
+            tr("Simulation Time"),
+            iface.mainWindow(),
+        )
+        self.results_time_dock.setObjectName(
+            "GusnetResultsTimeDock"
+        )
+        self.results_time_dock.setAllowedAreas(
+            Qt.DockWidgetArea.TopDockWidgetArea
+            | Qt.DockWidgetArea.BottomDockWidgetArea
+        )
+        self.results_time_dock.setWidget(
             self.results_time_control
         )
+        self.results_time_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetClosable
+            | QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        )
 
+        iface.addDockWidget(
+            Qt.DockWidgetArea.TopDockWidgetArea,
+            self.results_time_dock,
+        )
+
+        self.results_time_dock.resize(520, 90)
+
+        # QGIS chwilę po uruchomieniu przywraca zapisany układ paneli.
+        # Pokazujemy panel dopiero po zakończeniu tej operacji.
+        QTimer.singleShot(
+            1000,
+            self.show_results_time_dock,
+        )
+    def show_results_time_dock(self) -> None:
+        if (
+            not hasattr(self, "results_time_dock")
+            or self.results_time_dock is None
+            or sip.isdeleted(self.results_time_dock)
+        ):
+            return
+
+        self.results_time_dock.setFloating(False)
+
+        iface.addDockWidget(
+            Qt.DockWidgetArea.TopDockWidgetArea,
+            self.results_time_dock,
+        )
+
+        self.results_time_dock.setVisible(True)
+        self.results_time_dock.show()
+        self.results_time_dock.raise_()        
     def cleanup_toolbar(self) -> None:
-        self.results_time_control.destroy()
-        iface.removeToolBarIcon(self.results_time_widget)
+        if (
+            hasattr(self, "results_time_control")
+            and self.results_time_control is not None
+            and not sip.isdeleted(self.results_time_control)
+        ):
+            self.results_time_control.destroy()
+
+        if (
+            hasattr(self, "results_time_dock")
+            and self.results_time_dock is not None
+            and not sip.isdeleted(self.results_time_dock)
+        ):
+            iface.removeDockWidget(self.results_time_dock)
+            self.results_time_dock.close()
+
+            # Usunięcie natychmiastowe — ważne dla Plugin Reloadera.
+            sip.delete(self.results_time_dock)
+
+        self.results_time_control = None
+        self.results_time_dock = None
 
         iface.removeToolBarIcon(self.template_button)
         iface.removeToolBarIcon(self.load_inp_action)

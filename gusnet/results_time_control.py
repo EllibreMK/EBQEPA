@@ -180,8 +180,6 @@ class ResultsTimeControl(QWidget):
             self.controller.temporalFrameDurationChanged.disconnect(
                 self.update_from_controller
             )
-
-        self.deleteLater()
         
     def simulation_duration_hours(self) -> int:
         duration = ProjectSettings().get(
