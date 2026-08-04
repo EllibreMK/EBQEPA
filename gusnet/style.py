@@ -276,12 +276,7 @@ class _LayerStyler:
         background_line = QgsSimpleLineSymbolLayer.create(HAIRWIDTH_LINE | GREY_LINE | DOTTY_LINE)
 
         if self.layer_type is ModelLayer.VALVES:
-            left_triangle = QgsSimpleMarkerSymbolLayer.create(TRIANGLE | BLACK_FILL | NO_STROKE)
-            right_triangle = QgsSimpleMarkerSymbolLayer.create(TRIANGLE | BLACK_FILL | NO_STROKE | ROTATE_180)
-            # creating using nomral __init__ with list crashes 3.34
-            valve_marker = QgsMarkerSymbol.createSimple(left_triangle.properties())  # left_triangle, right_triangle])
-            valve_marker.appendSymbolLayer(right_triangle)
-            return _line_with_marker(background_line, valve_marker)
+            return QgsLineSymbol.createSimple(MEDIUM_LINE)
 
         if self.layer_type is ModelLayer.PUMPS:
             pump_body = QgsSimpleMarkerSymbolLayer.create(CIRCLE | PUMP_SIZE | BLACK_FILL | NO_STROKE)
