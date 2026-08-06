@@ -22,6 +22,7 @@ from qgis.core import (
     QgsRasterLayer,
     QgsSettings,
     QgsDateTimeRange,
+    QgsInterval,
 )
 from qgis.gui import QgisInterface, QgsLayerTreeViewIndicator, QgsProjectionSelectionDialog
 from qgis.PyQt.QtCore import (
@@ -60,8 +61,12 @@ from gusnet.gusnet_processing.run_simulation import RunSimulation
 from gusnet.i18n import tr, trn
 from gusnet.settings import ProjectSettings, SettingKey
 from gusnet.results_time_control import ResultsTimeControl
+from gusnet.result_chart import show_selected_result_chart
+from gusnet.simulation_report import show_simulation_report
+from gusnet.style import apply_qev_result_style
 
-MESSAGE_CATEGORY = "Gusnet"
+PLUGIN_NAME = "Integrator QGIS–EPANET"
+MESSAGE_CATEGORY = PLUGIN_NAME
 
 VERSION_SETTING = "gusnet/version"
 
@@ -76,7 +81,8 @@ class Plugin:
     def __init__(self) -> None:
         self.object = QWidget()
 
-        self.menu = tr("Gusnet")
+        self.menu = PLUGIN_NAME
+        self.toolbar = None
 
     def initProcessing(self):  # noqa N802
         self.provider = Provider()
@@ -119,6 +125,24 @@ class Plugin:
         self.load_inp_action = LoadInpAction()
         self.load_example_action = LoadExampleAction()
         self.open_settings_action = OpenSettingsAction()
+        self.result_chart_action = QAction(
+            QIcon("gusnet:result-chart.svg"),
+            tr("Wykres zaznaczonego wyniku"),
+            self.object,
+        )
+        self.result_chart_action.setToolTip(
+            tr("Pokaż przebieg w czasie dla jednego zaznaczonego obiektu wynikowego")
+        )
+        self.result_chart_action.triggered.connect(self.show_result_chart)
+        self.simulation_report_action = QAction(
+            QgsApplication.getThemeIcon("mActionShowReport.svg"),
+            tr("Raport symulacji"),
+            self.object,
+        )
+        self.simulation_report_action.setToolTip(
+            tr("Pokaż ekstrema wyników i raport ostatniej symulacji")
+        )
+        self.simulation_report_action.triggered.connect(self.show_simulation_report)
 
     def cleanup_actions(self) -> None:
         self.run_action.deleteLater()
@@ -127,6 +151,8 @@ class Plugin:
         self.load_inp_action.deleteLater()
         self.load_example_action.deleteLater()
         self.open_settings_action.deleteLater()
+        self.result_chart_action.deleteLater()
+        self.simulation_report_action.deleteLater()
 
     def setup_menu(self) -> None:
         """Setup the plugin menu in the QGIS GUI."""
@@ -135,6 +161,8 @@ class Plugin:
         iface.addPluginToMenu(self.menu, self.load_template_geopackage_action)
         iface.addPluginToMenu(self.menu, self.load_inp_action)
         iface.addPluginToMenu(self.menu, self.load_example_action)
+        iface.addPluginToMenu(self.menu, self.result_chart_action)
+        iface.addPluginToMenu(self.menu, self.simulation_report_action)
         try:
             our_menu_action = next(action for action in iface.pluginMenu().actions() if action.text() == self.menu)
             our_menu_action.setIcon(LOGO_ICON)
@@ -147,13 +175,34 @@ class Plugin:
         iface.removePluginMenu(self.menu, self.load_template_geopackage_action)
         iface.removePluginMenu(self.menu, self.load_inp_action)
         iface.removePluginMenu(self.menu, self.load_example_action)
+        iface.removePluginMenu(self.menu, self.result_chart_action)
+        iface.removePluginMenu(self.menu, self.simulation_report_action)
+
+    def show_result_chart(self) -> None:
+        dialog = show_selected_result_chart(iface)
+        if dialog is not None:
+            # Keep a Python reference while the non-modal Qt dialog is open.
+            self.result_chart_dialog = dialog
+
+    def show_simulation_report(self) -> None:
+        log_text = ""
+        if hasattr(self.run_action, "feedback"):
+            with contextlib.suppress(Exception):
+                log_text = self.run_action.feedback.textLog()
+        dialog = show_simulation_report(iface, log_text)
+        if dialog is not None:
+            self.simulation_report_dialog = dialog
 
     def setup_toolbar(self) -> None:
+        """Create a dedicated toolbar, like the other Eko-Babice tools."""
+        self.toolbar = iface.addToolBar(PLUGIN_NAME)
+        self.toolbar.setObjectName("IntegratorQgisEpanetToolbar")
+
         template_menu = QMenu(self.object)
         template_menu.addAction(self.load_template_memory_action)
         template_menu.addAction(self.load_template_geopackage_action)
 
-        template_button = QToolButton(self.object)
+        template_button = QToolButton(self.toolbar)
         template_button.setMenu(template_menu)
         template_button.setDefaultAction(self.load_template_memory_action)
         template_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -166,34 +215,30 @@ class Plugin:
         run_menu.addMenu(DurationSettingMenu(tr("Duration (hours)"), run_menu))
         run_menu.addMenu(SettingMenu(tr("Demand Type"), run_menu, SettingKey.DEMAND_TYPE))
 
-        run_button = QToolButton(self.object)
+        run_button = QToolButton(self.toolbar)
         run_button.setMenu(run_menu)
         run_button.setDefaultAction(self.run_action)
         run_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
 
-        self.template_button = iface.addToolBarWidget(template_button)
-        iface.addToolBarIcon(self.load_inp_action)
-        self.run_button = iface.addToolBarWidget(run_button)
-        
-        self.results_time_control = ResultsTimeControl(
-            iface,
-            self.object,
-        )
+        self.template_widget_action = self.toolbar.addWidget(template_button)
+        self.toolbar.addAction(self.load_inp_action)
+        self.run_widget_action = self.toolbar.addWidget(run_button)
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.result_chart_action)
+        self.toolbar.addAction(self.simulation_report_action)
+
+        self.results_time_control = ResultsTimeControl(iface, self.object)
 
         self.results_time_dock = QDockWidget(
-            tr("Simulation Time"),
+            tr("Czas symulacji"),
             iface.mainWindow(),
         )
-        self.results_time_dock.setObjectName(
-            "GusnetResultsTimeDock"
-        )
+        self.results_time_dock.setObjectName("IntegratorQgisEpanetResultsTimeDock")
         self.results_time_dock.setAllowedAreas(
             Qt.DockWidgetArea.TopDockWidgetArea
             | Qt.DockWidgetArea.BottomDockWidgetArea
         )
-        self.results_time_dock.setWidget(
-            self.results_time_control
-        )
+        self.results_time_dock.setWidget(self.results_time_control)
         self.results_time_dock.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetClosable
             | QDockWidget.DockWidgetFeature.DockWidgetMovable
@@ -204,15 +249,11 @@ class Plugin:
             Qt.DockWidgetArea.TopDockWidgetArea,
             self.results_time_dock,
         )
-
         self.results_time_dock.resize(520, 90)
 
-        # QGIS chwilę po uruchomieniu przywraca zapisany układ paneli.
-        # Pokazujemy panel dopiero po zakończeniu tej operacji.
-        QTimer.singleShot(
-            1000,
-            self.show_results_time_dock,
-        )
+        # QGIS restores its saved panel layout shortly after startup.
+        QTimer.singleShot(1000, self.show_results_time_dock)
+
     def show_results_time_dock(self) -> None:
         if (
             not hasattr(self, "results_time_dock")
@@ -222,15 +263,14 @@ class Plugin:
             return
 
         self.results_time_dock.setFloating(False)
-
         iface.addDockWidget(
             Qt.DockWidgetArea.TopDockWidgetArea,
             self.results_time_dock,
         )
-
         self.results_time_dock.setVisible(True)
         self.results_time_dock.show()
-        self.results_time_dock.raise_()        
+        self.results_time_dock.raise_()
+
     def cleanup_toolbar(self) -> None:
         if (
             hasattr(self, "results_time_control")
@@ -246,16 +286,15 @@ class Plugin:
         ):
             iface.removeDockWidget(self.results_time_dock)
             self.results_time_dock.close()
-
-            # Usunięcie natychmiastowe — ważne dla Plugin Reloadera.
             sip.delete(self.results_time_dock)
 
         self.results_time_control = None
         self.results_time_dock = None
 
-        iface.removeToolBarIcon(self.template_button)
-        iface.removeToolBarIcon(self.load_inp_action)
-        iface.removeToolBarIcon(self.run_button)
+        if self.toolbar is not None and not sip.isdeleted(self.toolbar):
+            iface.mainWindow().removeToolBar(self.toolbar)
+            self.toolbar.deleteLater()
+        self.toolbar = None
 
     def warm_up_wntr(self) -> None:
         """wntr is slow to load so start warming it up now !"""
@@ -281,7 +320,7 @@ class Plugin:
         if old_version == gusnet.__version__:
             return
 
-        title = tr("Gusnet upgraded successfully") if old_version else tr("Gusnet installed successfully")
+        title = tr("Integrator QGIS–EPANET został zaktualizowany") if old_version else tr("Integrator QGIS–EPANET został zainstalowany")
         text = tr("Load an example to try me out")
 
         message_item = iface.messageBar().createMessage(title, text)
@@ -353,7 +392,7 @@ class ProcessingRunnerAction(QAction):
         else:
             self.on_executed_with_error()
 
-        QgsApplication.messageLog().logMessage(tr("Gusnet:\n" + self.feedback.textLog()), level=Qgis.MessageLevel.Info)
+        QgsApplication.messageLog().logMessage(tr("Integrator QGIS–EPANET:\n" + self.feedback.textLog()), level=Qgis.MessageLevel.Info)
 
         self.setEnabled(True)
 
@@ -433,10 +472,11 @@ class RunAction(ProcessingRunnerAction):
             for layer in ResultLayer
         }
 
-        self.set_success_message(
-            saved_options.flow_units,
-            saved_options.headloss_formula,
-        )
+        self.success_message = tr(
+            "Symulacja zakończona pomyślnie. Jednostki przepływu: "
+        ) + str(saved_options.flow_units) + tr(
+            "; wzór strat: "
+        ) + str(saved_options.headloss_formula)
 
         return {
             **saved_params,
@@ -447,34 +487,60 @@ class RunAction(ProcessingRunnerAction):
     def on_executed_successfully(self, results) -> None:
         super().on_executed_successfully(results)
 
-        # QGIS ustawia własny zakres podczas ładowania warstw wynikowych.
-        # Czekamy chwilę i dopiero potem ustawiamy początek na północ.
-        QTimer.singleShot(250, self.set_results_time_range)
+        # handleAlgorithmResults() has already registered the output layers.
+        # Configure time and the default renderer immediately; the method still
+        # retries briefly if a provider finishes registering data asynchronously.
+        self.set_results_time_range()
 
-    def set_results_time_range(self) -> None:
-        duration_hours = int(
-            ProjectSettings().get(
-                SettingKey.SIMULATION_DURATION,
-                0,
-            )
-        )
+    def set_results_time_range(self, retry: int = 0) -> None:
+        # Read the number of frames from the actual result arrays. This avoids
+        # the 00:00/00:00 state when the project duration setting is missing.
+        frame_count = 0
+        pressure_layers = []
+        candidate_fields = ("pressure", "head", "flowrate", "velocity", "headloss")
 
-        start_time = QDateTime(
-            QDate.currentDate(),
-            QTime(0, 0, 0),
-        )
+        for layer in QgsProject.instance().mapLayers().values():
+            if not hasattr(layer, "fields"):
+                continue
+            available = [name for name in candidate_fields if layer.fields().indexFromName(name) >= 0]
+            if not available:
+                continue
+            feature = next(layer.getFeatures(), None)
+            if feature is None:
+                continue
+            for field_name in available:
+                value = feature[field_name]
+                if isinstance(value, (list, tuple)):
+                    frame_count = max(frame_count, len(value))
+            if layer.fields().indexFromName("pressure") >= 0:
+                pressure_layers.append(layer)
 
-        displayed_hours = max(1, duration_hours)
-        end_time = start_time.addSecs(displayed_hours * 3600)
+        # Processing may emit its success signal just before QGIS finishes
+        # registering output layers. Retry briefly instead of falling back to zero.
+        if frame_count <= 0 and retry < 10:
+            QTimer.singleShot(250, lambda: self.set_results_time_range(retry + 1))
+            return
+
+        if frame_count <= 0:
+            duration_hours = int(ProjectSettings().get(SettingKey.SIMULATION_DURATION, 0))
+            frame_count = max(1, duration_hours + 1)
+
+        start_time = QDateTime(QDate.currentDate(), QTime(0, 0, 0))
+        end_time = start_time.addSecs(frame_count * 3600)
 
         controller = iface.mapCanvas().temporalController()
-        controller.setTemporalExtents(
-            QgsDateTimeRange(
-                start_time,
-                end_time,
-            )
-        )
-        controller.setCurrentFrameNumber(0)  
+        controller.setFrameDuration(QgsInterval(1, Qgis.TemporalUnit.Hours))
+        controller.setTemporalExtents(QgsDateTimeRange(start_time, end_time))
+        controller.setCurrentFrameNumber(0)
+
+        if hasattr(self, "results_time_control") and self.results_time_control is not None:
+            self.results_time_control.update_from_controller()
+            # Apply after Gusnet's processing output handler has finished setting
+            # its default renderers. A second delayed pass covers providers that
+            # register output layers asynchronously.
+            QTimer.singleShot(0, self.results_time_control.apply_selected_styles)
+            QTimer.singleShot(400, self.results_time_control.apply_selected_styles)
+        iface.mapCanvas().refresh()
 
 
 class LoadTemplateToMemoryAction(ProcessingRunnerAction):

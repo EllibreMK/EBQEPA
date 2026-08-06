@@ -11,7 +11,7 @@ class Provider(QgsProcessingProvider):
         return "gusnet"
 
     def name(self) -> str:
-        return "Gusnet"
+        return "Integrator QGIS–EPANET"
 
     def icon(self):
         return QIcon("gusnet:logo.svg")

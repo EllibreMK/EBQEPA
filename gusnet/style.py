@@ -5,12 +5,16 @@ from typing import Any, Literal
 from qgis.core import (
     Qgis,
     QgsAbstractVectorLayerLabeling,
+    QgsCategorizedSymbolRenderer,
     QgsClassificationPrettyBreaks,
     QgsDefaultValue,
     QgsEditorWidgetSetup,
     QgsFeatureRenderer,
     QgsField,
     QgsGraduatedSymbolRenderer,
+    QgsRendererCategory,
+    QgsRendererRange,
+    QgsRuleBasedRenderer,
     QgsLineSymbol,
     QgsMarkerLineSymbolLayer,
     QgsMarkerSymbol,
@@ -25,6 +29,7 @@ from qgis.core import (
     QgsVectorLayerSimpleLabeling,
     QgsVectorLayerTemporalProperties,
 )
+from qgis.PyQt.QtGui import QColor
 
 from gusnet.elements import (
     CurveType,
@@ -68,6 +73,89 @@ def style(
         layer.setEditorWidgetSetup(i, field_styler.editor_widget)
         layer.setDefaultValueDefinition(i, field_styler.default_value)
         layer.setConstraintExpression(i, *field_styler.constraint)
+
+
+def apply_qev_result_style(
+    layer: QgsVectorLayer,
+    layer_type: ResultLayer,
+    field_name: str,
+) -> bool:
+    """Apply a lightweight QEV-inspired renderer to a result layer.
+
+    The renderer uses fixed graduated ranges over the current-frame expression.
+    This avoids rebuilding a CASE category expression for every feature and is
+    noticeably faster on large result layers. The function returns ``True``
+    only when a new renderer was installed.
+    """
+
+    style_key = f"{layer_type.value}:{field_name}:qev-fixed-v3"
+
+    value_expression = f'gusnet_result_at_current_time("{field_name}")'
+
+    if layer_type is ResultLayer.NODES and field_name == "pressure":
+        ranges = [
+            (-1.0e100, 0.0, "≤ 0", (233, 13, 237)),
+            (0.0, 10.0, "0–10", (78, 140, 215)),
+            (10.0, 20.0, "10–20", (62, 93, 0)),
+            (20.0, 30.0, "20–30", (62, 185, 0)),
+            (30.0, 40.0, "30–40", (253, 183, 42)),
+            (40.0, 50.0, "40–50", (240, 0, 4)),
+            (50.0, 60.0, "50–60", (150, 58, 65)),
+            (60.0, 1.0e100, "≥ 60", (95, 46, 58)),
+        ]
+        source_symbol = QgsMarkerSymbol.createSimple(
+            CIRCLE | NO_STROKE | {"size": "1.7"}
+        )
+    elif layer_type is ResultLayer.LINKS and field_name == "flowrate":
+        value_expression = f"abs({value_expression})"
+        ranges = [
+            (0.0, 0.1, "0–0.1", (21, 55, 228)),
+            (0.1, 0.5, "0.1–0.5", (62, 185, 0)),
+            (0.5, 1.0, "0.5–1", (253, 183, 42)),
+            (1.0, 5.0, "1–5", (240, 0, 4)),
+            (5.0, 1.0e100, "≥ 5", (43, 21, 13)),
+        ]
+        source_symbol = QgsLineSymbol.createSimple({"line_width": "0.45"})
+    else:
+        renderer = QgsGraduatedSymbolRenderer()
+        renderer.setClassAttribute(value_expression)
+        renderer.setSourceSymbol(
+            QgsLineSymbol.createSimple({"line_width": "0.45"})
+            if layer_type is ResultLayer.LINKS
+            else QgsMarkerSymbol.createSimple(
+                CIRCLE | NO_STROKE | {"size": "1.7"}
+            )
+        )
+        method = QgsClassificationPrettyBreaks()
+        method.setLabelPrecision(2)
+        renderer.setClassificationMethod(method)
+        renderer.updateClasses(layer, 5)
+        ramp = QgsStyle().defaultStyle().colorRamp("Spectral")
+        if ramp is not None:
+            ramp.invert()
+            renderer.updateColorRamp(ramp)
+        layer.setRenderer(renderer)
+        layer.setCustomProperty(
+            "integrator_qgis_epanet/result_style", style_key
+        )
+        return True
+
+    renderer_ranges = []
+    for lower, upper, label, rgb in ranges:
+        symbol = source_symbol.clone()
+        symbol.setColor(QColor(*rgb))
+        renderer_ranges.append(
+            QgsRendererRange(lower, upper, symbol, label)
+        )
+
+    renderer = QgsGraduatedSymbolRenderer(
+        value_expression, renderer_ranges
+    )
+    layer.setRenderer(renderer)
+    layer.setCustomProperty(
+        "integrator_qgis_epanet/result_style", style_key
+    )
+    return True
 
 
 class _FieldStyler:
