@@ -1,0 +1,19 @@
+[general]
+name=Integrator QGIS-EPANET
+version=3.3.0
+qgisMinimumVersion=3.44.0
+qgisMaximumVersion=4.99
+author=Mariusz Knapiński
+email=mariusz.knapinski@eko-babice.pl
+changelog=Nowa, niezależna tożsamość wtyczki: katalog i identyfikator qgis_epanet_integrator. QGIS nie łączy jej już z wpisem Gusnet. Zachowano backend WNTR, sterowanie czasem, wykresy, raport oraz walidację modelu. Wersja stabilna: 3.2.5.
+tags=water, epanet, hydraulics, water network analysis, wntr, wodociagi
+repository=https://github.com/EllibreMK/EBQEPA
+tracker=https://github.com/EllibreMK/EBQEPA/issues
+homepage=https://github.com/EllibreMK/EBQEPA
+category=Plugins
+icon=resources/icons/logo.svg
+deprecated=False
+experimental=True
+supportsQt6=True
+description=Projektowanie, import, eksport, symulacja i analiza sieci wodociągowych EPANET bezpośrednio w QGIS.
+about=Integrator QGIS-EPANET łączy edycję sieci w QGIS z obliczeniami EPANET przez WNTR. Umożliwia import i eksport INP, uruchamianie symulacji hydraulicznych, wizualizację wyników w czasie, wykresy, raport symulacji i walidację modelu. Autor: Mariusz Knapiński. Projekt rozwinięty na bazie Gusnet autorstwa Angusa McBride’a. Wersja stabilna: 3.2.5.
