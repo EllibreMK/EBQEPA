@@ -57,14 +57,22 @@ from qgis_epanet_integrator.elements import FlowUnit, HeadlossFormula, ModelLaye
 from qgis_epanet_integrator.gusnet_processing.empty_model import TemplateLayers
 from qgis_epanet_integrator.gusnet_processing.import_inp import ImportInp
 from qgis_epanet_integrator.gusnet_processing.provider import Provider
-from qgis_epanet_integrator.gusnet_processing.run_simulation import RunSimulation
+from qgis_epanet_integrator.gusnet_processing.run_simulation import ExportInpFile, RunSimulation
 from qgis_epanet_integrator.i18n import tr, trn
 from qgis_epanet_integrator.settings import ProjectSettings, SettingKey
 from qgis_epanet_integrator.results_time_control import ResultsTimeControl
 from qgis_epanet_integrator.result_chart import show_selected_result_chart
 from qgis_epanet_integrator.simulation_report import show_simulation_report
 from qgis_epanet_integrator.model_validation import show_model_validation
+from qgis_epanet_integrator.gis_compare import show_gis_compare
+from qgis_epanet_integrator.gis_import import show_add_fragments_to_model
+from qgis_epanet_integrator.service_connections import (
+    show_service_connections_foundation,
+    show_add_service_groups_to_model,
+)
 from qgis_epanet_integrator.style import apply_qev_result_style
+from qgis_epanet_integrator.gis_sync import SyncCallbacks, show_gis_sync_dialog
+from qgis_epanet_integrator.service_mapping import refresh_mapping_from_project, load_mapping_layer
 
 PLUGIN_NAME = "Integrator QGIS-EPANET"
 MESSAGE_CATEGORY = PLUGIN_NAME
@@ -126,6 +134,7 @@ class Plugin:
         self.load_inp_action = LoadInpAction()
         self.load_example_action = LoadExampleAction()
         self.open_settings_action = OpenSettingsAction()
+        self.export_inp_action = ExportInpAction()
         self.result_chart_action = QAction(
             QIcon("qgis_epanet_integrator:result-chart.svg"),
             tr("Wykres zaznaczonego wyniku"),
@@ -151,6 +160,61 @@ class Plugin:
         )
         self.model_validation_action.setToolTip(tr("Sprawdź identyfikatory, średnice, długości i połączenia przewodów"))
         self.model_validation_action.triggered.connect(self.show_model_validation)
+        self.gis_compare_action = QAction(
+            QgsApplication.getThemeIcon("mActionDifference.svg"),
+            tr("Znajdź nowe elementy GIS"),
+            self.object,
+        )
+        self.gis_compare_action.setToolTip(tr("Znajdź fragmenty warstwy GIS, których nie ma jeszcze w modelu EPANET"))
+        self.gis_compare_action.triggered.connect(self.show_gis_compare)
+        self.gis_add_action = QAction(
+            QgsApplication.getThemeIcon("mActionAddFeature.svg"),
+            tr("Dodaj zaznaczone fragmenty do modelu"),
+            self.object,
+        )
+        self.gis_add_action.setToolTip(
+            tr("Dodaj zaznaczone nowe fragmenty GIS do warstw modelu EPANET")
+        )
+        self.gis_add_action.triggered.connect(self.show_add_gis_fragments)
+        self.service_connections_action = QAction(
+            QIcon("qgis_epanet_integrator:sync-connections.png"),
+            tr("Przyłącza GIS / synchronizacja"),
+            self.object,
+        )
+        self.service_connections_action.setToolTip(
+            tr("Znajdź i pogrupuj nowe przyłącza GIS; pokaż wolne końce jako przyszłe węzły odbiorców/rozbiorów")
+        )
+        self.service_connections_action.triggered.connect(self.show_service_connections)
+        self.service_connections_add_action = QAction(
+            QIcon("qgis_epanet_integrator:gis-add-fragments.png"),
+            tr("Dodaj zaznaczone grupy przyłączy do modelu"),
+            self.object,
+        )
+        self.service_connections_add_action.setToolTip(
+            tr("Dodaj całe zaznaczone grupy przyłączy, razem z odgałęzieniami, i powiąż końcówki z node_id")
+        )
+        self.service_connections_add_action.triggered.connect(self.show_add_service_groups)
+
+        self.gis_sync_action = QAction(
+            QIcon("qgis_epanet_integrator:sync-connections.png"),
+            tr("Synchronizacja GIS"),
+            self.object,
+        )
+        self.gis_sync_action.setToolTip(
+            tr("Otwórz jedno okno do synchronizacji sieci głównej, przyłączy i kontroli modelu")
+        )
+        self.gis_sync_action.triggered.connect(self.show_gis_sync)
+
+        # Kolorowe ikony o wysokim kontraście są czytelne zarówno w jasnym,
+        # jak i ciemnym motywie QGIS. Tekst pozostaje w menu i tooltipach.
+        self.run_action.setIcon(QIcon("qgis_epanet_integrator:run-simulation.png"))
+        self.load_inp_action.setIcon(QIcon("qgis_epanet_integrator:import-inp.png"))
+        self.export_inp_action.setIcon(QIcon("qgis_epanet_integrator:export-inp.png"))
+        self.result_chart_action.setIcon(QIcon("qgis_epanet_integrator:result-chart-color.png"))
+        self.simulation_report_action.setIcon(QIcon("qgis_epanet_integrator:simulation-report.png"))
+        self.model_validation_action.setIcon(QIcon("qgis_epanet_integrator:validate-model.png"))
+        self.gis_compare_action.setIcon(QIcon("qgis_epanet_integrator:gis-find-new.png"))
+        self.gis_add_action.setIcon(QIcon("qgis_epanet_integrator:gis-add-fragments.png"))
 
     def cleanup_actions(self) -> None:
         self.run_action.deleteLater()
@@ -159,9 +223,15 @@ class Plugin:
         self.load_inp_action.deleteLater()
         self.load_example_action.deleteLater()
         self.open_settings_action.deleteLater()
+        self.export_inp_action.deleteLater()
         self.result_chart_action.deleteLater()
         self.simulation_report_action.deleteLater()
         self.model_validation_action.deleteLater()
+        self.gis_compare_action.deleteLater()
+        self.gis_add_action.deleteLater()
+        self.service_connections_action.deleteLater()
+        self.service_connections_add_action.deleteLater()
+        self.gis_sync_action.deleteLater()
 
     def setup_menu(self) -> None:
         """Setup the plugin menu in the QGIS GUI."""
@@ -170,9 +240,15 @@ class Plugin:
         iface.addPluginToMenu(self.menu, self.load_template_geopackage_action)
         iface.addPluginToMenu(self.menu, self.load_inp_action)
         iface.addPluginToMenu(self.menu, self.load_example_action)
+        iface.addPluginToMenu(self.menu, self.export_inp_action)
         iface.addPluginToMenu(self.menu, self.result_chart_action)
         iface.addPluginToMenu(self.menu, self.simulation_report_action)
         iface.addPluginToMenu(self.menu, self.model_validation_action)
+        iface.addPluginToMenu(self.menu, self.gis_sync_action)
+        iface.addPluginToMenu(self.menu, self.gis_compare_action)
+        iface.addPluginToMenu(self.menu, self.gis_add_action)
+        iface.addPluginToMenu(self.menu, self.service_connections_action)
+        iface.addPluginToMenu(self.menu, self.service_connections_add_action)
         try:
             our_menu_action = next(action for action in iface.pluginMenu().actions() if action.text() == self.menu)
             our_menu_action.setIcon(LOGO_ICON)
@@ -185,9 +261,15 @@ class Plugin:
         iface.removePluginMenu(self.menu, self.load_template_geopackage_action)
         iface.removePluginMenu(self.menu, self.load_inp_action)
         iface.removePluginMenu(self.menu, self.load_example_action)
+        iface.removePluginMenu(self.menu, self.export_inp_action)
         iface.removePluginMenu(self.menu, self.result_chart_action)
         iface.removePluginMenu(self.menu, self.simulation_report_action)
         iface.removePluginMenu(self.menu, self.model_validation_action)
+        iface.removePluginMenu(self.menu, self.gis_sync_action)
+        iface.removePluginMenu(self.menu, self.gis_compare_action)
+        iface.removePluginMenu(self.menu, self.gis_add_action)
+        iface.removePluginMenu(self.menu, self.service_connections_action)
+        iface.removePluginMenu(self.menu, self.service_connections_add_action)
 
     def show_result_chart(self) -> None:
         dialog = show_selected_result_chart(iface)
@@ -197,6 +279,30 @@ class Plugin:
 
     def show_model_validation(self) -> None:
         self.model_validation_dialog = show_model_validation(iface)
+
+    def show_gis_compare(self) -> None:
+        self.gis_compare_layer = show_gis_compare(iface)
+
+    def show_add_gis_fragments(self) -> None:
+        show_add_fragments_to_model(iface)
+
+    def show_service_connections(self) -> None:
+        self.service_connections_layer = show_service_connections_foundation(iface)
+
+    def show_add_service_groups(self) -> None:
+        show_add_service_groups_to_model(iface)
+
+    def show_gis_sync(self) -> None:
+        callbacks = SyncCallbacks(
+            find_mains=self.show_gis_compare,
+            add_mains=self.show_add_gis_fragments,
+            find_services=self.show_service_connections,
+            add_services=self.show_add_service_groups,
+            validate_model=self.show_model_validation,
+            refresh_mapping=lambda: refresh_mapping_from_project(iface),
+            show_mapping=lambda: load_mapping_layer(iface),
+        )
+        self.gis_sync_dialog = show_gis_sync_dialog(iface, callbacks)
 
     def show_simulation_report(self) -> None:
         log_text = ""
@@ -211,6 +317,11 @@ class Plugin:
         """Create a dedicated toolbar, like the other Eko-Babice tools."""
         self.toolbar = iface.addToolBar(PLUGIN_NAME)
         self.toolbar.setObjectName("IntegratorQgisEpanetToolbar")
+        try:
+            icon_only_style = Qt.ToolButtonStyle.ToolButtonIconOnly
+        except AttributeError:  # Qt5 compatibility
+            icon_only_style = Qt.ToolButtonIconOnly
+        self.toolbar.setToolButtonStyle(icon_only_style)
 
         template_menu = QMenu(self.object)
         template_menu.addAction(self.load_template_memory_action)
@@ -236,11 +347,28 @@ class Plugin:
 
         self.template_widget_action = self.toolbar.addWidget(template_button)
         self.toolbar.addAction(self.load_inp_action)
+        self.toolbar.addAction(self.export_inp_action)
         self.run_widget_action = self.toolbar.addWidget(run_button)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.result_chart_action)
         self.toolbar.addAction(self.simulation_report_action)
         self.toolbar.addAction(self.model_validation_action)
+        self.toolbar.addSeparator()
+
+        sync_menu = QMenu(self.object)
+        sync_menu.addAction(self.gis_sync_action)
+        sync_menu.addSeparator()
+        sync_menu.addAction(self.gis_compare_action)
+        sync_menu.addAction(self.gis_add_action)
+        sync_menu.addSeparator()
+        sync_menu.addAction(self.service_connections_action)
+        sync_menu.addAction(self.service_connections_add_action)
+
+        sync_button = QToolButton(self.toolbar)
+        sync_button.setMenu(sync_menu)
+        sync_button.setDefaultAction(self.gis_sync_action)
+        sync_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        self.service_widget_action = self.toolbar.addWidget(sync_button)
 
         self.results_time_control = ResultsTimeControl(iface, self.object)
 
@@ -556,6 +684,36 @@ class RunAction(ProcessingRunnerAction):
             QTimer.singleShot(0, self.results_time_control.apply_selected_styles)
             QTimer.singleShot(400, self.results_time_control.apply_selected_styles)
         iface.mapCanvas().refresh()
+
+
+class ExportInpAction(ProcessingRunnerAction):
+    def __init__(self):
+        super().__init__(ExportInpFile())
+        self.setText(tr("Eksportuj do EPANET INP"))
+        self.setToolTip(tr("Zapisz aktualny model do pliku EPANET .inp"))
+
+    def get_parameters(self) -> dict:
+        filepath, _ = QFileDialog.getSaveFileName(
+            iface.mainWindow(),
+            tr("Eksportuj model do EPANET INP"),
+            QSettings().value("UI/lastProjectDir"),
+            tr("EPANET INP File") + " (*.inp)",
+        )
+        if not filepath:
+            raise CantGetParametersException
+        if not filepath.lower().endswith(".inp"):
+            filepath += ".inp"
+
+        algorithm = ExportInpFile()
+        input_layers = algorithm.get_default_input_layers()
+        if not input_layers:
+            self.display_error(tr("Najpierw ustaw warstwy należące do modelu."))
+            raise CantGetParametersException
+
+        saved_options = ProjectSettings().load_options()
+        saved_params = algorithm.options_to_param_values(saved_options)
+        self.success_message = tr("Model wyeksportowano do: ") + filepath
+        return {**saved_params, **input_layers, ExportInpFile.OUTPUT_INP: filepath}
 
 
 class LoadTemplateToMemoryAction(ProcessingRunnerAction):

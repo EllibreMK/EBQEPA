@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from math import hypot
 
 from qgis.core import (
+    Qgis,
     QgsFeature,
     QgsFeatureRequest,
     QgsGeometry,
@@ -101,17 +103,36 @@ def _text(feature, field_name: str) -> str:
     return "" if value is None else str(value).strip()
 
 
-def _line_endpoints(geometry: QgsGeometry):
+def _line_parts(geometry: QgsGeometry):
     line = geometry.asPolyline()
-    if not line:
-        multi = geometry.asMultiPolyline()
-        line = multi[0] if multi else []
-    if len(line) < 2:
+    if line:
+        return [line]
+    return [part for part in geometry.asMultiPolyline() if part]
+
+
+def _line_endpoints(geometry: QgsGeometry):
+    parts = _line_parts(geometry)
+    if not parts or len(parts[0]) < 2 or len(parts[-1]) < 2:
         return None
-    return line[0], line[-1]
+    return parts[0][0], parts[-1][-1]
+
+
+def _point_distance(first, second) -> float:
+    return hypot(first.x() - second.x(), first.y() - second.y())
 
 
 def _validation_tolerance(layers) -> float:
+    """Return a conservative topology tolerance in layer/map units.
+
+    For projected models we use 1 cm. For geographic CRS the equivalent
+    small angular tolerance is used. The extent-based fallback only applies
+    when the CRS is unavailable.
+    """
+    for layer in layers.values():
+        crs = layer.crs()
+        if crs.isValid():
+            return 1e-7 if crs.isGeographic() else 0.01
+
     extent = QgsRectangle()
     has_extent = False
     for layer in layers.values():
@@ -126,22 +147,85 @@ def _validation_tolerance(layers) -> float:
     return max(span * 1e-8, 1e-7)
 
 
+def _point_rectangle(point, tolerance: float) -> QgsRectangle:
+    return QgsRectangle(
+        point.x() - tolerance,
+        point.y() - tolerance,
+        point.x() + tolerance,
+        point.y() + tolerance,
+    )
+
+
+def _node_ids_near(index, node_points, point, tolerance: float):
+    ids = []
+    for node_id in index.intersects(_point_rectangle(point, tolerance)):
+        node_point = node_points.get(node_id)
+        if node_point is not None and _point_distance(node_point, point) <= tolerance:
+            ids.append(node_id)
+    ids.sort(key=lambda node_id: _point_distance(node_points[node_id], point))
+    return ids
+
+
+def _line_signature(geometry: QgsGeometry, tolerance: float):
+    """Direction-independent signature used for duplicate geometry checks."""
+    scale = max(tolerance, 1e-12)
+    signatures = []
+    for part in _line_parts(geometry):
+        coords = tuple((round(p.x() / scale), round(p.y() / scale)) for p in part)
+        reverse = tuple(reversed(coords))
+        signatures.append(min(coords, reverse))
+    return tuple(sorted(signatures))
+
+
+def _intersection_points(geometry: QgsGeometry):
+    if geometry.isNull() or geometry.isEmpty():
+        return []
+    if geometry.type() != Qgis.GeometryType.Point:
+        return []
+    if geometry.isMultipart():
+        return list(geometry.asMultiPoint())
+    return [geometry.asPoint()]
+
+
+@dataclass(frozen=True)
+class _LinkRecord:
+    synthetic_id: int
+    model_layer: ModelLayer
+    feature: object
+    layer_id: str
+    geometry: QgsGeometry
+    endpoint_nodes: tuple[int | None, int | None]
+
+
 @dataclass
 class _Topology:
     index: QgsSpatialIndex
     nodes: dict[int, tuple[ModelLayer, object, str]]
+    node_points: dict[int, object]
     connected_node_ids: set[int]
     adjacency: dict[int, set[int]]
     tolerance: float
+    link_index: QgsSpatialIndex
+    links: dict[int, _LinkRecord]
 
 
 def _build_topology(layers, issues: list[ValidationIssue]) -> _Topology:
     tolerance = _validation_tolerance(layers)
+    close_node_tolerance = tolerance * 5
+
+    # Geometria przewodów z danych GIS często zawiera bardzo krótkie
+    # segmenty wynikające z digitalizacji. Nie traktujemy ich jako błędów
+    # hydraulicznych. Błędem pozostają wyłącznie faktycznie powtórzone
+    # wierzchołki (praktycznie zerowa długość segmentu).
+    duplicate_vertex_tolerance = max(tolerance * 1e-4, 1e-12)
+    short_segment_warning_tolerance = tolerance
+    short_segment_info_tolerance = tolerance * 10
+
     index = QgsSpatialIndex()
     nodes: dict[int, tuple[ModelLayer, object, str]] = {}
+    node_points: dict[int, object] = {}
     connected_node_ids: set[int] = set()
     adjacency: dict[int, set[int]] = {}
-    coordinate_buckets: dict[tuple[int, int], tuple[str, str, int]] = {}
 
     synthetic_id = 1
     for model_layer in (ModelLayer.JUNCTIONS, ModelLayer.RESERVOIRS, ModelLayer.TANKS):
@@ -156,31 +240,63 @@ def _build_topology(layers, issues: list[ValidationIssue]) -> _Topology:
                     "Błąd", tr("Węzeł nie ma geometrii."), layer.id(), feature.id(), name,
                 ))
                 continue
+            if geom.type() != Qgis.GeometryType.Point:
+                issues.append(ValidationIssue(
+                    "Błąd", tr("Warstwa węzłowa zawiera geometrię inną niż punktowa."),
+                    layer.id(), feature.id(), name,
+                ))
+                continue
+            if geom.isMultipart():
+                issues.append(ValidationIssue(
+                    "Błąd", tr("Węzeł ma geometrię wieloczęściową."),
+                    layer.id(), feature.id(), name,
+                ))
+                continue
             if not geom.isGeosValid():
                 issues.append(ValidationIssue(
                     "Błąd", tr("Geometria węzła jest nieprawidłowa."), layer.id(), feature.id(), name,
                 ))
+
             point = geom.asPoint()
+
+            # Detect both exact/near duplicates and suspiciously close nodes.
+            nearby = []
+            for node_id in index.intersects(_point_rectangle(point, close_node_tolerance)):
+                previous_point = node_points.get(node_id)
+                if previous_point is None:
+                    continue
+                distance = _point_distance(previous_point, point)
+                if distance <= close_node_tolerance:
+                    nearby.append((distance, node_id))
+            if nearby:
+                distance, previous_id = min(nearby)
+                previous_feature = nodes[previous_id][1]
+                previous_name = _feature_name(previous_feature)
+                if distance <= tolerance:
+                    severity = "Błąd"
+                    message = tr("Węzeł nakłada się na inny węzeł: {other}.").format(other=previous_name)
+                else:
+                    severity = "Ostrzeżenie"
+                    message = tr(
+                        "Węzeł leży bardzo blisko węzła {other} (odległość {distance:.4g})."
+                    ).format(other=previous_name, distance=distance)
+                issues.append(ValidationIssue(
+                    severity, message, layer.id(), feature.id(), name,
+                ))
+
             indexed = QgsFeature(feature)
             indexed.setId(synthetic_id)
             index.addFeature(indexed)
             nodes[synthetic_id] = (model_layer, feature, layer.id())
+            node_points[synthetic_id] = point
             adjacency[synthetic_id] = set()
-
-            bucket = (round(point.x() / tolerance), round(point.y() / tolerance))
-            previous = coordinate_buckets.get(bucket)
-            if previous is not None:
-                previous_name, _, _ = previous
-                issues.append(ValidationIssue(
-                    "Błąd",
-                    tr("Węzeł nakłada się na inny węzeł: {other}.").format(other=previous_name),
-                    layer.id(), feature.id(), name,
-                ))
-            else:
-                coordinate_buckets[bucket] = (name, layer.id(), feature.id())
             synthetic_id += 1
 
-    geometry_seen: dict[bytes, tuple[str, str, int]] = {}
+    link_index = QgsSpatialIndex()
+    links: dict[int, _LinkRecord] = {}
+    geometry_seen: dict[tuple, tuple[str, str, int]] = {}
+    link_synthetic_id = 1
+
     for model_layer in (ModelLayer.PIPES, ModelLayer.PUMPS, ModelLayer.VALVES):
         layer = layers.get(model_layer)
         if layer is None:
@@ -193,17 +309,65 @@ def _build_topology(layers, issues: list[ValidationIssue]) -> _Topology:
                     "Błąd", tr("Połączenie nie ma geometrii."), layer.id(), feature.id(), name,
                 ))
                 continue
+            if geom.type() != Qgis.GeometryType.Line:
+                issues.append(ValidationIssue(
+                    "Błąd", tr("Warstwa połączeń zawiera geometrię inną niż liniowa."),
+                    layer.id(), feature.id(), name,
+                ))
+                continue
             if not geom.isGeosValid():
                 issues.append(ValidationIssue(
                     "Błąd", tr("Geometria połączenia jest nieprawidłowa."), layer.id(), feature.id(), name,
                 ))
-            if geom.length() <= 0:
+            if not geom.isSimple():
                 issues.append(ValidationIssue(
-                    "Błąd", tr("Połączenie ma zerową długość geometryczną."), layer.id(), feature.id(), name,
+                    "Błąd", tr("Połączenie ma samoprzecięcie lub inną niesimpleksową geometrię."),
+                    layer.id(), feature.id(), name,
+                ))
+            if geom.length() <= tolerance:
+                issues.append(ValidationIssue(
+                    "Błąd", tr("Połączenie ma zerową lub pomijalnie małą długość geometryczną."),
+                    layer.id(), feature.id(), name,
                 ))
 
-            key = bytes(geom.asWkb())
-            previous = geometry_seen.get(key)
+            parts = _line_parts(geom)
+            if len(parts) > 1:
+                issues.append(ValidationIssue(
+                    "Błąd", tr("Połączenie ma geometrię wieloczęściową. EPANET oczekuje jednej linii."),
+                    layer.id(), feature.id(), name,
+                ))
+
+            for part in parts:
+                for first_point, second_point in zip(part, part[1:]):
+                    segment_length = _point_distance(first_point, second_point)
+                    if segment_length <= duplicate_vertex_tolerance:
+                        issues.append(ValidationIssue(
+                            "Błąd",
+                            tr("Połączenie zawiera identyczne kolejne wierzchołki (segment o zerowej długości)."),
+                            layer.id(), feature.id(), name,
+                        ))
+                        break
+                    if segment_length <= short_segment_warning_tolerance:
+                        issues.append(ValidationIssue(
+                            "Ostrzeżenie",
+                            tr("Połączenie zawiera bardzo krótki segment ({length:.4g}).").format(
+                                length=segment_length
+                            ),
+                            layer.id(), feature.id(), name,
+                        ))
+                        break
+                    if segment_length < short_segment_info_tolerance:
+                        issues.append(ValidationIssue(
+                            "Informacja",
+                            tr("Połączenie zawiera krótki segment ({length:.4g}); może wynikać z dokładności danych GIS.").format(
+                                length=segment_length
+                            ),
+                            layer.id(), feature.id(), name,
+                        ))
+                        break
+
+            signature = _line_signature(geom, tolerance)
+            previous = geometry_seen.get(signature)
             if previous is not None:
                 issues.append(ValidationIssue(
                     "Ostrzeżenie",
@@ -211,38 +375,56 @@ def _build_topology(layers, issues: list[ValidationIssue]) -> _Topology:
                     layer.id(), feature.id(), name,
                 ))
             else:
-                geometry_seen[key] = (name, layer.id(), feature.id())
+                geometry_seen[signature] = (name, layer.id(), feature.id())
 
             endpoints = _line_endpoints(geom)
             if endpoints is None:
                 issues.append(ValidationIssue(
                     "Błąd", tr("Nie można odczytać końców połączenia."), layer.id(), feature.id(), name,
                 ))
-                continue
-            endpoint_nodes: list[int | None] = []
-            for point in endpoints:
-                nearest = index.nearestNeighbor(point, 1, tolerance)
-                endpoint_nodes.append(nearest[0] if nearest else None)
-            missing = sum(node_id is None for node_id in endpoint_nodes)
-            if missing:
-                issues.append(ValidationIssue(
-                    "Błąd",
-                    tr("Końcówka połączenia nie jest połączona z węzłem ({count}).").format(count=missing),
-                    layer.id(), feature.id(), name,
-                ))
-                continue
-            first, second = endpoint_nodes
-            assert first is not None and second is not None
-            connected_node_ids.update((first, second))
-            adjacency[first].add(second)
-            adjacency[second].add(first)
-            if first == second:
-                issues.append(ValidationIssue(
-                    "Błąd",
-                    tr("Obie końcówki połączenia są podłączone do tego samego węzła."),
-                    layer.id(), feature.id(), name,
-                ))
+                endpoint_nodes = (None, None)
+            else:
+                if _point_distance(endpoints[0], endpoints[1]) <= tolerance:
+                    issues.append(ValidationIssue(
+                        "Błąd", tr("Połączenie zaczyna się i kończy w tym samym miejscu."),
+                        layer.id(), feature.id(), name,
+                    ))
 
+                found_nodes = []
+                for point in endpoints:
+                    candidates = _node_ids_near(index, node_points, point, tolerance)
+                    found_nodes.append(candidates[0] if candidates else None)
+                endpoint_nodes = (found_nodes[0], found_nodes[1])
+
+                missing = sum(node_id is None for node_id in endpoint_nodes)
+                if missing:
+                    issues.append(ValidationIssue(
+                        "Błąd",
+                        tr("Końcówka połączenia nie jest połączona z węzłem ({count}).").format(count=missing),
+                        layer.id(), feature.id(), name,
+                    ))
+                else:
+                    first, second = endpoint_nodes
+                    assert first is not None and second is not None
+                    connected_node_ids.update((first, second))
+                    adjacency[first].add(second)
+                    adjacency[second].add(first)
+                    if first == second:
+                        issues.append(ValidationIssue(
+                            "Błąd",
+                            tr("Obie końcówki połączenia są podłączone do tego samego węzła."),
+                            layer.id(), feature.id(), name,
+                        ))
+
+            indexed = QgsFeature(feature)
+            indexed.setId(link_synthetic_id)
+            link_index.addFeature(indexed)
+            links[link_synthetic_id] = _LinkRecord(
+                link_synthetic_id, model_layer, feature, layer.id(), QgsGeometry(geom), endpoint_nodes,
+            )
+            link_synthetic_id += 1
+
+    # Orphan nodes.
     for node_id, (_, feature, layer_id) in nodes.items():
         if node_id not in connected_node_ids:
             issues.append(ValidationIssue(
@@ -250,8 +432,72 @@ def _build_topology(layers, issues: list[ValidationIssue]) -> _Topology:
                 layer_id, feature.id(), _feature_name(feature),
             ))
 
-    return _Topology(index, nodes, connected_node_ids, adjacency, tolerance)
+    # A node lying on the interior of a link is a classic unsplit T-junction.
+    for node_id, (_, feature, layer_id) in nodes.items():
+        point = node_points[node_id]
+        point_geom = QgsGeometry.fromPointXY(point)
+        for link_id in link_index.intersects(_point_rectangle(point, tolerance)):
+            link = links.get(link_id)
+            if link is None:
+                continue
+            if node_id in link.endpoint_nodes:
+                continue
+            if link.geometry.distance(point_geom) <= tolerance:
+                issues.append(ValidationIssue(
+                    "Błąd",
+                    tr("Węzeł leży na środku połączenia {link}, ale połączenie nie jest w tym miejscu podzielone.").format(
+                        link=_feature_name(link.feature)
+                    ),
+                    layer_id, feature.id(), _feature_name(feature),
+                ))
 
+    # Pairwise link checks use a spatial index, so only overlapping bounding boxes
+    # are tested. This catches crossings without nodes and partial overlaps.
+    checked_pairs: set[tuple[int, int]] = set()
+    for link_id, link in links.items():
+        for other_id in link_index.intersects(link.geometry.boundingBox()):
+            if other_id == link_id:
+                continue
+            pair = tuple(sorted((link_id, other_id)))
+            if pair in checked_pairs:
+                continue
+            checked_pairs.add(pair)
+            other = links.get(other_id)
+            if other is None:
+                continue
+            if not link.geometry.intersects(other.geometry):
+                continue
+
+            intersection = link.geometry.intersection(other.geometry)
+            if intersection.isNull() or intersection.isEmpty():
+                continue
+
+            if intersection.type() == Qgis.GeometryType.Line and intersection.length() > tolerance:
+                issues.append(ValidationIssue(
+                    "Ostrzeżenie",
+                    tr("Połączenie nakłada się częściowo na element {other}.").format(
+                        other=_feature_name(other.feature)
+                    ),
+                    link.layer_id, link.feature.id(), _feature_name(link.feature),
+                ))
+                continue
+
+            for point in _intersection_points(intersection):
+                near_nodes = _node_ids_near(index, node_points, point, tolerance)
+                if not near_nodes:
+                    issues.append(ValidationIssue(
+                        "Ostrzeżenie",
+                        tr("Połączenie przecina element {other} bez węzła w miejscu przecięcia.").format(
+                            other=_feature_name(other.feature)
+                        ),
+                        link.layer_id, link.feature.id(), _feature_name(link.feature),
+                    ))
+                    break
+
+    return _Topology(
+        index, nodes, node_points, connected_node_ids, adjacency,
+        tolerance, link_index, links,
+    )
 
 def _check_duplicates(layers, issues):
     for group in (
@@ -476,8 +722,8 @@ class ValidationOptionsDialog(QDialog):
         geometry_group = QGroupBox(tr("Kontrole obowiązkowe"), self)
         geometry_layout = QVBoxLayout(geometry_group)
         mandatory = QCheckBox(tr(
-            "Geometria, duplikaty identyfikatorów, nakładające się i osierocone węzły, "
-            "końcówki połączeń, długości i średnice"
+            "Geometria, topologia połączeń, skrzyżowania i T-junction bez podziału, "
+            "nakładanie geometrii, samoprzecięcia, zerowe i bardzo krótkie segmenty, duplikaty i osierocone węzły"
         ), geometry_group)
         mandatory.setChecked(True)
         mandatory.setEnabled(False)
